@@ -1,0 +1,280 @@
+/*
+* arrayProduct.cpp - example in MATLAB External Interfaces
+*
+* Multiplies an input scalar (multiplier)
+* times a MxN matrix (inMatrix)
+* and outputs a MxN matrix (outMatrix)
+*
+* Usage : from MATLAB
+*         >> outMatrix = arrayProduct(multiplier, inMatrix)
+*
+* This is a C++ MEX-file for MATLAB.
+* Copyright 2017 The MathWorks, Inc.
+*
+*/
+
+#include "mex.hpp"
+#include "mexAdapter.hpp"
+
+class MexFunction : public matlab::mex::Function {
+public:
+    void operator()(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+//         checkArguments(outputs, inputs);
+        matlab::data::TypedArray<double> inr = std::move(inputs[0]);
+        matlab::data::TypedArray<double> ind2 = std::move(inputs[1]);
+        
+        double vals[6]{};
+        int i = 0;
+        for(auto elem : inr){
+            vals[i++] = elem;
+        }
+        double sVals2[4]{};
+
+        i = 0;
+        for(auto elem : ind2){
+            sVals2[i++] = elem;
+        }
+
+
+        double T_vec[11]; 
+        computeT(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], T_vec);
+        double S_vec[11]; 
+        S(sVals2[0], sVals2[1], sVals2[2], sVals2[3], S_vec);
+        double sds[11][4];
+        Sds(sVals2[0], sVals2[1], sVals2[2], sVals2[3], sds);
+        double j_mat[4];
+        J(sds, T_vec, sVals2, j_mat);
+        double error = computeError(S_vec, T_vec, j_mat); 
+        double dJdr_mat[4][6];
+        computedJdr(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], sVals2[0], sVals2[1], sVals2[2], sVals2[3], dJdr_mat);
+        double dTdr_mat[11][6];
+        computedTdr(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], dTdr_mat);
+        double jacobian[6];
+        computeDerivative(T_vec, S_vec, j_mat, dTdr_mat, dJdr_mat, jacobian);
+
+        using namespace matlab::data;
+
+        ArrayFactory factory;
+
+        outputs[0] = factory.createArray<double>({ 11,1 });
+        for(int i = 0; i<11; i++){
+            outputs[0][i] = T_vec[i];
+        }
+        outputs[1] = factory.createArray<double>({ 11,1 });
+        for(int i = 0; i<11; i++){
+            outputs[1][i] = S_vec[i];
+        }
+        outputs[2] = factory.createArray<double>({ 11,4 });
+        for(int i = 0; i<11; i++){
+            for(int j = 0; j<4; j++){
+                outputs[2][i][j] = sds[i][j];
+            }
+        }
+        outputs[3] = factory.createArray<double>({ 4, 1});
+        for(int i = 0; i<4; i++){
+            outputs[3][i] = j_mat[i];
+        }
+        outputs[4] = factory.createArray<double>({ 1, 1});
+        outputs[4][0]= error;
+
+
+        outputs[5] = factory.createArray<double>({ 4, 6});
+        for(int i = 0; i<4; i++){
+            for(int j = 0; j<6; j++){
+                outputs[5][i][j] = dJdr_mat[i][j];
+            }
+        }
+
+        outputs[6] = factory.createArray<double>({ 11, 6});
+        for(int i = 0; i<11; i++){
+            for(int j = 0; j<6; j++){
+                outputs[6][i][j] = dTdr_mat[i][j];
+            }
+        }
+
+        outputs[7] = factory.createArray<double>({ 6, 1});
+        for(int i = 0; i<6; i++){
+            outputs[7][i] = jacobian[i];
+        }
+
+
+    }
+
+    void arrayProduct(matlab::data::TypedArray<double>& inMatrix, double multiplier) {
+        
+        for (auto& elem : inMatrix) {
+            elem *= multiplier;
+        }
+    }
+
+    void checkArguments(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+        std::shared_ptr<matlab::engine::MATLABEngine> matlabPtr = getEngine();
+        matlab::data::ArrayFactory factory;
+
+        if (inputs.size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Two inputs required") }));
+        }
+
+        if (inputs[0].getNumberOfElements() != 1) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a scalar") }));
+        }
+        
+        if (inputs[0].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[0].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a noncomplex scalar double") }));
+        }
+
+        if (inputs[1].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[1].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input matrix must be type double") }));
+        }
+
+        if (inputs[1].getDimensions().size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input must be m-by-n dimension") }));
+        }
+    }
+    
+
+void computeT(double x0, double x1, double x2, double x3, double x4, double x5, double T_vec[11]) {
+    T_vec[0] = x0 * x0 * (x0 * x0 * x1 * x1 * x4 * x4 + x0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x0 * x0 * x1 * x2 * x3 * x4 + x0 * x0 * x2 * x2 * x3 * x3 + x0 * x0 * x2 * x2 * x5 * x5 - 2.0 * x0 * x1 * x1 * x1 * x4 * x4 - 2.0 * x0 * x1 * x1 * x1 * x5 * x5 + 2.0 * x0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x0 * x1 * x2 * x3 * x3 * x4 + 2.0 * x0 * x1 * x2 * x4 * x4 * x4 + 2.0 * x0 * x1 * x2 * x4 * x5 * x5 + 2.0 * x0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 * x3 - 2.0 * x0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x0 * x2 * x2 * x3 * x5 * x5 + x1 * x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x1 * x5 * x5 + 2.0 * x1 * x1 * x2 * x2 * x4 * x4 + 2.0 * x1 * x1 * x2 * x2 * x5 * x5 - 2.0 * x1 * x1 * x2 * x3 * x3 * x4 - 2.0 * x1 * x1 * x2 * x4 * x4 * x4 - 2.0 * x1 * x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x2 * x4 * x4 + x2 * x2 * x2 * x2 * x5 * x5 - 2.0 * x2 * x2 * x2 * x3 * x3 * x4 - 2.0 * x2 * x2 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x2 * x4 * x5 * x5 + x2 * x2 * x3 * x3 * x3 * x3 + 2.0 * x2 * x2 * x3 * x3 * x4 * x4 + 2.0 * x2 * x2 * x3 * x3 * x5 * x5 + x2 * x2 * x4 * x4 * x4 * x4 + 2.0 * x2 * x2 * x4 * x4 * x5 * x5 + x2 * x2 * x5 * x5 * x5 * x5);
+    T_vec[1] = -2.0 * x0 * (-x0 * x0 * x1 * x2 * x4 + x0 * x0 * x1 * x4 * x4 + x0 * x0 * x1 * x5 * x5 + x0 * x0 * x2 * x2 * x3 - x0 * x0 * x2 * x3 * x4 + x0 * x1 * x1 * x2 * x4 - 2.0 * x0 * x1 * x1 * x4 * x4 - 2.0 * x0 * x1 * x1 * x5 * x5 + 2.0 * x0 * x1 * x2 * x3 * x4 + x0 * x2 * x2 * x2 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x2 * x2 * x4 * x4 - x0 * x2 * x2 * x5 * x5 + x0 * x2 * x3 * x3 * x4 + x0 * x2 * x4 * x4 * x4 + x0 * x2 * x4 * x5 * x5 + x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x5 * x5 - x1 * x1 * x2 * x3 * x4 + x1 * x2 * x2 * x4 * x4 + x1 * x2 * x2 * x5 * x5 - x1 * x2 * x3 * x3 * x4 - x1 * x2 * x4 * x4 * x4 - x1 * x2 * x4 * x5 * x5 - x2 * x2 * x2 * x3 * x4 + x2 * x2 * x3 * x3 * x3 + x2 * x2 * x3 * x4 * x4 + x2 * x2 * x3 * x5 * x5);
+    T_vec[2] = -2.0 * x0 * (-x1 * x1 * x1 * x4 * x4 - x1 * x1 * x1 * x5 * x5 + x1 * x1 * x2 * x3 * x4 + x0 * x1 * x1 * x4 * x4 + x0 * x1 * x1 * x5 * x5 - x1 * x2 * x2 * x4 * x4 - x1 * x2 * x2 * x5 * x5 + x1 * x2 * x3 * x3 * x4 - 2.0 * x0 * x1 * x2 * x3 * x4 + x1 * x2 * x4 * x4 * x4 + x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x3 * x4 - x2 * x2 * x3 * x3 * x3 + x0 * x2 * x2 * x3 * x3 - x2 * x2 * x3 * x4 * x4 - x2 * x2 * x3 * x5 * x5 + x0 * x2 * x2 * x5 * x5);
+    T_vec[3] = -2.0 * x0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - x0 * x1 * x4 * x4 - x0 * x1 * x5 * x5 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 + x0 * x2 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5);
+    T_vec[4] = -2.0 * x0 * x0 * x2 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5);
+    T_vec[5] = x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x3 * x3 + x2 * x2 * x5 * x5;
+    T_vec[6] = -2.0 * x0 * (x1 * x4 * x4 - x2 * x3 * x4 + x1 * x5 * x5);
+    T_vec[7] = x0 * x0 * (x4 * x4 + x5 * x5);
+    T_vec[8] = 2.0 * x0 * x2 * (x1 * x4 - x2 * x3);
+    T_vec[9] = -2.0 * x0 * x0 * x2 * x4;
+    T_vec[10] = x0 * x0 * x2 * x2;
+}
+
+void S(double s0, double s1, double s2, double s3, double S_vec[11]) {
+    S_vec[0] = 1;
+    S_vec[1] = s0;
+    S_vec[2] = s1;
+    S_vec[3] = s2;
+    S_vec[4] = s3;
+    S_vec[5] = (s1 - s0) * (s1 - s0);
+    S_vec[6] = (s0 - s1) * (s0 - s2);
+    S_vec[7] = (s0 - s2) * (s0 - s2);
+    S_vec[8] = (s0 - s1) * (s0 - s3);
+    S_vec[9] = (s0 - s2) * (s0 - s3);
+    S_vec[10] = (s0 - s3) * (s0 - s3);
+}
+
+void Sds(double s0, double s1, double s2, double s3, double sds[11][4]) {
+    double s_vec[11][4]{ {0, 0, 0, 0},
+        {1, 0, 0, 0},
+        {0, 1, 0, 0},
+        {0, 0, 1, 0},
+        {0, 0, 0, 1},
+        {2 * (s0 - s1), 2 * (s1 - s0), 0, 0},
+        {2 * s0 - s1 - s2, s2 - s0, s1 - s0, 0},
+        {2 * (s0 - s2), 0, 2 * (s2 - s0), 0},
+        {2 * s0 - s1 - s3, s3 - s0, 0, s1 - s0},
+        {2 * s0 - s2 - s3, 0, s3 - s0, s2 - s0},
+        {2 * (s0 - s3), 0, 0, 2 * (s3 - s0)} };
+    for (int i = 0; i < 11; i++) {
+        for (int j = 0; j < 4; j++) {
+            sds[i][j] = s_vec[i][j];
+        }
+    }
+}
+
+double computeError(const double s_vec[11], double t_vec[11], double j_mat[4]) {
+    double error = s_vec[0] * t_vec[0];
+    for (int i = 1; i < 11; i++) {
+        error += s_vec[i] * t_vec[i];
+    }
+    error /= sqrt(j_mat[0] * j_mat[0] + j_mat[1] * j_mat[1] + j_mat[2] * j_mat[2] + j_mat[3] * j_mat[3]);
+
+    return error;
+}
+
+void J(double sds[11][4], double t[11], double d2[4], double j_mat[4]) {
+    for (int i = 0; i < 4; i++) {
+        double val = sds[0][i] * t[0];
+        for (int j = 1; j < 11; j++) {
+            val += sds[j][i] * t[j];
+        }
+        j_mat[i] = val;
+    }
+    for (int i = 0; i < 4; i++) {
+        j_mat[i] = j_mat[i]*2.0 * sqrt(d2[i]);
+    }
+}
+
+    void computedTdr(const double x0, const double x1, const double x2, const double x3, const double x4, const double x5, double dTdr_vec[11][6]) {
+    double dTdr[11][6]{ {2 * x0 * (x0 * x0 * x1 * x1 * x4 * x4 + x0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x0 * x0 * x1 * x2 * x3 * x4 + x0 * x0 * x2 * x2 * x3 * x3 + x0 * x0 * x2 * x2 * x5 * x5 - 2.0 * x0 * x1 * x1 * x1 * x4 * x4 - 2.0 * x0 * x1 * x1 * x1 * x5 * x5 + 2.0 * x0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x0 * x1 * x2 * x3 * x3 * x4 + 2.0 * x0 * x1 * x2 * x4 * x4 * x4 + 2.0 * x0 * x1 * x2 * x4 * x5 * x5 + 2.0 * x0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 * x3 - 2.0 * x0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x0 * x2 * x2 * x3 * x5 * x5 + x1 * x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x1 * x5 * x5 + 2.0 * x1 * x1 * x2 * x2 * x4 * x4 + 2.0 * x1 * x1 * x2 * x2 * x5 * x5 - 2.0 * x1 * x1 * x2 * x3 * x3 * x4 - 2.0 * x1 * x1 * x2 * x4 * x4 * x4 - 2.0 * x1 * x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x2 * x4 * x4 + x2 * x2 * x2 * x2 * x5 * x5 - 2.0 * x2 * x2 * x2 * x3 * x3 * x4 - 2.0 * x2 * x2 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x2 * x4 * x5 * x5 + x2 * x2 * x3 * x3 * x3 * x3 + 2.0 * x2 * x2 * x3 * x3 * x4 * x4 + 2.0 * x2 * x2 * x3 * x3 * x5 * x5 + x2 * x2 * x4 * x4 * x4 * x4 + 2.0 * x2 * x2 * x4 * x4 * x5 * x5 + x2 * x2 * x5 * x5 * x5 * x5) + x0 * x0 * (-2 * x1 * x1 * x1 * x4 * x4 - 2.0 * x1 * x1 * x1 * x5 * x5 + 2.0 * x1 * x1 * x2 * x3 * x4 + 2.0 * x0 * x1 * x1 * x4 * x4 + 2.0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x1 * x2 * x3 * x3 * x4 - 4.0 * x0 * x1 * x2 * x3 * x4 + 2.0 * x1 * x2 * x4 * x4 * x4 + 2.0 * x1 * x2 * x4 * x5 * x5 + 2.0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x2 * x2 * x3 * x3 * x3 + 2.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x2 * x2 * x3 * x5 * x5 + 2.0 * x0 * x2 * x2 * x5 * x5), x0 * x0 * (2 * x0 * x0 * x1 * x4 * x4 + 2.0 * x0 * x0 * x1 * x5 * x5 - 2.0 * x0 * x0 * x2 * x3 * x4 - 6.0 * x0 * x1 * x1 * x4 * x4 - 6.0 * x0 * x1 * x1 * x5 * x5 + 4.0 * x0 * x1 * x2 * x3 * x4 - 2.0 * x0 * x2 * x2 * x4 * x4 - 2.0 * x0 * x2 * x2 * x5 * x5 + 2.0 * x0 * x2 * x3 * x3 * x4 + 2.0 * x0 * x2 * x4 * x4 * x4 + 2.0 * x0 * x2 * x4 * x5 * x5 + 4.0 * x1 * x1 * x1 * x4 * x4 + 4.0 * x1 * x1 * x1 * x5 * x5 + 4.0 * x1 * x2 * x2 * x4 * x4 + 4.0 * x1 * x2 * x2 * x5 * x5 - 4.0 * x1 * x2 * x3 * x3 * x4 - 4.0 * x1 * x2 * x4 * x4 * x4 - 4.0 * x1 * x2 * x4 * x5 * x5), x0 * x0 * (-2 * x0 * x0 * x1 * x3 * x4 + 2.0 * x0 * x0 * x2 * x3 * x3 + 2.0 * x0 * x0 * x2 * x5 * x5 + 2.0 * x0 * x1 * x1 * x3 * x4 - 4.0 * x0 * x1 * x2 * x4 * x4 - 4.0 * x0 * x1 * x2 * x5 * x5 + 2.0 * x0 * x1 * x3 * x3 * x4 + 2.0 * x0 * x1 * x4 * x4 * x4 + 2.0 * x0 * x1 * x4 * x5 * x5 + 6.0 * x0 * x2 * x2 * x3 * x4 - 4.0 * x0 * x2 * x3 * x3 * x3 - 4.0 * x0 * x2 * x3 * x4 * x4 - 4.0 * x0 * x2 * x3 * x5 * x5 + 4.0 * x1 * x1 * x2 * x4 * x4 + 4.0 * x1 * x1 * x2 * x5 * x5 - 2.0 * x1 * x1 * x3 * x3 * x4 - 2.0 * x1 * x1 * x4 * x4 * x4 - 2.0 * x1 * x1 * x4 * x5 * x5 + 4.0 * x2 * x2 * x2 * x4 * x4 + 4.0 * x2 * x2 * x2 * x5 * x5 - 6.0 * x2 * x2 * x3 * x3 * x4 - 6.0 * x2 * x2 * x4 * x4 * x4 - 6.0 * x2 * x2 * x4 * x5 * x5 + 2.0 * x2 * x3 * x3 * x3 * x3 + 4.0 * x2 * x3 * x3 * x4 * x4 + 4.0 * x2 * x3 * x3 * x5 * x5 + 2.0 * x2 * x4 * x4 * x4 * x4 + 4.0 * x2 * x4 * x4 * x5 * x5 + 2.0 * x2 * x5 * x5 * x5 * x5), x0 * x0 * (-2 * x0 * x0 * x1 * x2 * x4 + 2.0 * x0 * x0 * x2 * x2 * x3 + 2.0 * x0 * x1 * x1 * x2 * x4 + 4.0 * x0 * x1 * x2 * x3 * x4 + 2.0 * x0 * x2 * x2 * x2 * x4 - 6.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x2 * x2 * x4 * x4 - 2.0 * x0 * x2 * x2 * x5 * x5 - 4.0 * x1 * x1 * x2 * x3 * x4 - 4.0 * x2 * x2 * x2 * x3 * x4 + 4.0 * x2 * x2 * x3 * x3 * x3 + 4.0 * x2 * x2 * x3 * x4 * x4 + 4.0 * x2 * x2 * x3 * x5 * x5), x0 * x0 * (2 * x0 * x0 * x1 * x1 * x4 - 2.0 * x0 * x0 * x1 * x2 * x3 - 4.0 * x0 * x1 * x1 * x1 * x4 + 2.0 * x0 * x1 * x1 * x2 * x3 - 4.0 * x0 * x1 * x2 * x2 * x4 + 2.0 * x0 * x1 * x2 * x3 * x3 + 6.0 * x0 * x1 * x2 * x4 * x4 + 2.0 * x0 * x1 * x2 * x5 * x5 + 2.0 * x0 * x2 * x2 * x2 * x3 - 4.0 * x0 * x2 * x2 * x3 * x4 + 2.0 * x1 * x1 * x1 * x1 * x4 + 4.0 * x1 * x1 * x2 * x2 * x4 - 2.0 * x1 * x1 * x2 * x3 * x3 - 6.0 * x1 * x1 * x2 * x4 * x4 - 2.0 * x1 * x1 * x2 * x5 * x5 + 2.0 * x2 * x2 * x2 * x2 * x4 - 2.0 * x2 * x2 * x2 * x3 * x3 - 6.0 * x2 * x2 * x2 * x4 * x4 - 2.0 * x2 * x2 * x2 * x5 * x5 + 4.0 * x2 * x2 * x3 * x3 * x4 + 4.0 * x2 * x2 * x4 * x4 * x4 + 4.0 * x2 * x2 * x4 * x5 * x5), x0 * x0 * (2 * x0 * x0 * x1 * x1 * x5 + 2.0 * x0 * x0 * x2 * x2 * x5 - 4.0 * x0 * x1 * x1 * x1 * x5 - 4.0 * x0 * x1 * x2 * x2 * x5 + 4.0 * x0 * x1 * x2 * x4 * x5 - 4.0 * x0 * x2 * x2 * x3 * x5 + 2.0 * x1 * x1 * x1 * x1 * x5 + 4.0 * x1 * x1 * x2 * x2 * x5 - 4.0 * x1 * x1 * x2 * x4 * x5 + 2.0 * x2 * x2 * x2 * x2 * x5 - 4.0 * x2 * x2 * x2 * x4 * x5 + 4.0 * x2 * x2 * x3 * x3 * x5 + 4.0 * x2 * x2 * x4 * x4 * x5 + 4.0 * x2 * x2 * x5 * x5 * x5)},
+    {2.0 * x1 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x3 * x3 * x3 - 2.0 * x1 * x1 * x1 * x5 * x5 - 2.0 * x0 * (x1 * x1 * x2 * x4 - 2.0 * x1 * x1 * x4 * x4 - 2.0 * x1 * x1 * x5 * x5 + 2.0 * x1 * x2 * x3 * x4 - 2.0 * x0 * x1 * x2 * x4 + 2.0 * x0 * x1 * x4 * x4 + 2.0 * x0 * x1 * x5 * x5 + x2 * x2 * x2 * x4 - 2.0 * x2 * x2 * x3 * x3 + 2.0 * x0 * x2 * x2 * x3 - 2.0 * x2 * x2 * x4 * x4 - x2 * x2 * x5 * x5 + x2 * x3 * x3 * x4 - 2.0 * x0 * x2 * x3 * x4 + x2 * x4 * x4 * x4 + x2 * x4 * x5 * x5) - 2.0 * x0 * x2 * x4 * x4 * x4 - 2.0 * x0 * x2 * x2 * x2 * x4 - 2.0 * x1 * x1 * x1 * x4 * x4 + 2.0 * x2 * x2 * x2 * x3 * x4 + 4.0 * x0 * x1 * x1 * x4 * x4 + 4.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x0 * x1 * x4 * x4 - 2.0 * x0 * x0 * x2 * x2 * x3 + 4.0 * x0 * x1 * x1 * x5 * x5 + 4.0 * x0 * x2 * x2 * x4 * x4 - 2.0 * x0 * x0 * x1 * x5 * x5 + 2.0 * x0 * x2 * x2 * x5 * x5 - 2.0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x1 * x2 * x2 * x5 * x5 - 2.0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x2 * x2 * x3 * x5 * x5 - 2.0 * x0 * x1 * x1 * x2 * x4 + 2.0 * x0 * x0 * x1 * x2 * x4 - 2.0 * x0 * x2 * x3 * x3 * x4 + 2.0 * x0 * x0 * x2 * x3 * x4 + 2.0 * x1 * x2 * x3 * x3 * x4 + 2.0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x0 * x2 * x4 * x5 * x5 + 2.0 * x1 * x2 * x4 * x5 * x5 - 4.0 * x0 * x1 * x2 * x3 * x4, -2 * x0 * (-x0 * x0 * x2 * x4 + x0 * x0 * x4 * x4 + x0 * x0 * x5 * x5 + 2.0 * x0 * x1 * x2 * x4 - 4.0 * x0 * x1 * x4 * x4 - 4.0 * x0 * x1 * x5 * x5 + 2.0 * x0 * x2 * x3 * x4 + 3.0 * x1 * x1 * x4 * x4 + 3.0 * x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5), -2 * x0 * (-x0 * x0 * x1 * x4 + 2.0 * x0 * x0 * x2 * x3 - x0 * x0 * x3 * x4 + x0 * x1 * x1 * x4 + 2.0 * x0 * x1 * x3 * x4 + 3.0 * x0 * x2 * x2 * x4 - 4.0 * x0 * x2 * x3 * x3 - 4.0 * x0 * x2 * x4 * x4 - 2.0 * x0 * x2 * x5 * x5 + x0 * x3 * x3 * x4 + x0 * x4 * x4 * x4 + x0 * x4 * x5 * x5 - x1 * x1 * x3 * x4 + 2.0 * x1 * x2 * x4 * x4 + 2.0 * x1 * x2 * x5 * x5 - x1 * x3 * x3 * x4 - x1 * x4 * x4 * x4 - x1 * x4 * x5 * x5 - 3.0 * x2 * x2 * x3 * x4 + 2.0 * x2 * x3 * x3 * x3 + 2.0 * x2 * x3 * x4 * x4 + 2.0 * x2 * x3 * x5 * x5), -2 * x0 * (x0 * x0 * x2 * x2 - x0 * x0 * x2 * x4 + 2.0 * x0 * x1 * x2 * x4 - 4.0 * x0 * x2 * x2 * x3 + 2.0 * x0 * x2 * x3 * x4 - x1 * x1 * x2 * x4 - 2.0 * x1 * x2 * x3 * x4 - x2 * x2 * x2 * x4 + 3.0 * x2 * x2 * x3 * x3 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5), -2 * x0 * (-x0 * x0 * x1 * x2 + 2.0 * x0 * x0 * x1 * x4 - x0 * x0 * x2 * x3 + x0 * x1 * x1 * x2 - 4.0 * x0 * x1 * x1 * x4 + 2.0 * x0 * x1 * x2 * x3 + x0 * x2 * x2 * x2 - 4.0 * x0 * x2 * x2 * x4 + x0 * x2 * x3 * x3 + 3.0 * x0 * x2 * x4 * x4 + x0 * x2 * x5 * x5 + 2.0 * x1 * x1 * x1 * x4 - x1 * x1 * x2 * x3 + 2.0 * x1 * x2 * x2 * x4 - x1 * x2 * x3 * x3 - 3.0 * x1 * x2 * x4 * x4 - x1 * x2 * x5 * x5 - x2 * x2 * x2 * x3 + 2.0 * x2 * x2 * x3 * x4), -2 * x0 * (2 * x5 * x0 * x0 * x1 - 4.0 * x5 * x0 * x1 * x1 - 2.0 * x5 * x0 * x2 * x2 + 2.0 * x4 * x5 * x0 * x2 + 2.0 * x5 * x1 * x1 * x1 + 2.0 * x5 * x1 * x2 * x2 - 2.0 * x4 * x5 * x1 * x2 + 2.0 * x3 * x5 * x2 * x2) },
+    {2.0 * x1 * x1 * x1 * x4 * x4 + 2.0 * x2 * x2 * x3 * x3 * x3 + 2.0 * x1 * x1 * x1 * x5 * x5 - 2.0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x3 * x3 + x2 * x2 * x5 * x5) - 2.0 * x1 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x0 * x1 * x1 * x4 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x0 * x2 * x2 * x5 * x5 + 2.0 * x1 * x2 * x2 * x4 * x4 + 2.0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x2 * x2 * x3 * x4 * x4 + 2.0 * x2 * x2 * x3 * x5 * x5 - 2.0 * x1 * x2 * x3 * x3 * x4 - 2.0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x1 * x2 * x4 * x5 * x5 + 4.0 * x0 * x1 * x2 * x3 * x4, -2 * x0 * (-3 * x1 * x1 * x4 * x4 - 3.0 * x1 * x1 * x5 * x5 + 2.0 * x1 * x2 * x3 * x4 + 2.0 * x0 * x1 * x4 * x4 + 2.0 * x0 * x1 * x5 * x5 - x2 * x2 * x4 * x4 - x2 * x2 * x5 * x5 + x2 * x3 * x3 * x4 - 2.0 * x0 * x2 * x3 * x4 + x2 * x4 * x4 * x4 + x2 * x4 * x5 * x5), -2 * x0 * (x1 * x1 * x3 * x4 - 2.0 * x1 * x2 * x4 * x4 - 2.0 * x1 * x2 * x5 * x5 + x1 * x3 * x3 * x4 - 2.0 * x0 * x1 * x3 * x4 + x1 * x4 * x4 * x4 + x1 * x4 * x5 * x5 + 3.0 * x2 * x2 * x3 * x4 - 2.0 * x2 * x3 * x3 * x3 + 2.0 * x0 * x2 * x3 * x3 - 2.0 * x2 * x3 * x4 * x4 - 2.0 * x2 * x3 * x5 * x5 + 2.0 * x0 * x2 * x5 * x5), 2.0 * x0 * (-x1 * x1 * x2 * x4 - 2.0 * x1 * x2 * x3 * x4 + 2.0 * x0 * x1 * x2 * x4 - x2 * x2 * x2 * x4 + 3.0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x2 * x2 * x3 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5), -2 * x0 * (-2 * x1 * x1 * x1 * x4 + x1 * x1 * x2 * x3 + 2.0 * x0 * x1 * x1 * x4 - 2.0 * x1 * x2 * x2 * x4 + x1 * x2 * x3 * x3 - 2.0 * x0 * x1 * x2 * x3 + 3.0 * x1 * x2 * x4 * x4 + x1 * x2 * x5 * x5 + x2 * x2 * x2 * x3 - 2.0 * x2 * x2 * x3 * x4), 2.0 * x0 * (2 * x1 * x1 * x1 * x5 - 2.0 * x0 * x1 * x1 * x5 - 2.0 * x0 * x2 * x2 * x5 + 2.0 * x1 * x2 * x2 * x5 + 2.0 * x2 * x2 * x3 * x5 - 2.0 * x1 * x2 * x4 * x5)},
+    {2.0 * x0 * x0 * (x1 * x4 * x4 - x2 * x3 * x4 + x1 * x5 * x5) - 4.0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - x0 * x1 * x4 * x4 - x0 * x1 * x5 * x5 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 + x0 * x2 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5), 2.0 * x0 * x0 * (x0 * x4 * x4 + x0 * x5 * x5 - 2.0 * x1 * x4 * x4 - 2.0 * x1 * x5 * x5), -2 * x0 * x0 * (-x3 * x3 * x4 + x0 * x3 * x4 - x4 * x4 * x4 + 2.0 * x2 * x4 * x4 - x4 * x5 * x5 + 2.0 * x2 * x5 * x5), -2 * x0 * x0 * (x0 * x2 * x4 - 2.0 * x2 * x3 * x4), 2.0 * x0 * x0 * (-2 * x1 * x1 * x4 + 2.0 * x0 * x1 * x4 - 2.0 * x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + 3.0 * x2 * x4 * x4 + x2 * x5 * x5), -2 * x0 * x0 * (2 * x5 * x1 * x1 - 2.0 * x0 * x5 * x1 + 2.0 * x5 * x2 * x2 - 2.0 * x4 * x5 * x2)},
+    {-4.0 * x0 * x2 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5) - 2.0 * x0 * x0 * x2 * (x1 * x4 - x2 * x3), -2 * x0 * x0 * x2 * (x0 * x4 - 2.0 * x1 * x4), -2 * x0 * x0 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5) - 2.0 * x0 * x0 * x2 * (x3 * x3 - x0 * x3 + x4 * x4 - 2.0 * x2 * x4 + x5 * x5), 2.0 * x0 * x0 * x2 * (x0 * x2 - 2.0 * x2 * x3), -2 * x0 * x0 * x2 * (-x1 * x1 + x0 * x1 - x2 * x2 + 2.0 * x4 * x2), -4 * x0 * x0 * x2 * x2 * x5},
+    {0, 2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5, 2.0 * x2 * x3 * x3 - 2.0 * x1 * x4 * x3 + 2.0 * x2 * x5 * x5, 2.0 * x3 * x2 * x2 - 2.0 * x1 * x4 * x2, 2.0 * x4 * x1 * x1 - 2.0 * x2 * x3 * x1, 2.0 * x5 * x1 * x1 + 2.0 * x5 * x2 * x2},
+    {-2.0 * x1 * x4 * x4 + 2.0 * x2 * x3 * x4 - 2.0 * x1 * x5 * x5, -2 * x0 * (x4 * x4 + x5 * x5), 2.0 * x0 * x3 * x4, 2.0 * x0 * x2 * x4, -2 * x0 * (2 * x1 * x4 - x2 * x3), -4 * x0 * x1 * x5},
+    {2.0 * x0 * (x4 * x4 + x5 * x5), 0, 0, 0, 2.0 * x0 * x0 * x4, 2.0 * x0 * x0 * x5},
+    {2.0 * x2 * (x1 * x4 - x2 * x3), 2.0 * x0 * x2 * x4, 2.0 * x0 * (x1 * x4 - x2 * x3) - 2.0 * x0 * x2 * x3, -2 * x0 * x2 * x2, 2.0 * x0 * x1 * x2, 0},
+    {-4.0 * x0 * x2 * x4, 0, -2 * x0 * x0 * x4, 0, -2 * x0 * x0 * x2, 0},
+    {2.0 * x0 * x2 * x2, 0, 2.0 * x0 * x0 * x2, 0, 0, 0} };
+
+    for (int i = 0; i < 11; i++) {
+        for (int j = 0; j < 6; j++) {
+            dTdr_vec[i][j] = dTdr[i][j];
+        }
+    }
+}
+
+void computedJdr(const double x0, const double x1, const double x2, const double x3, const double x4, const double x5, double s0, double s1, double s2, double s3, double dJdr_vec[4][6]) {
+    double dJdr[4][6]{ {(s1 - 2.0 * s0 + s2) * (2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5) - 2.0 * x2 * x2 * x3 * x3 * x3 - 2.0 * x1 * x1 * x1 * x5 * x5 - 2.0 * x0 * (x1 * x1 * x2 * x4 - 2.0 * x1 * x1 * x4 * x4 - 2.0 * x1 * x1 * x5 * x5 + 2.0 * x1 * x2 * x3 * x4 - 2.0 * x0 * x1 * x2 * x4 + 2.0 * x0 * x1 * x4 * x4 + 2.0 * x0 * x1 * x5 * x5 + x2 * x2 * x2 * x4 - 2.0 * x2 * x2 * x3 * x3 + 2.0 * x0 * x2 * x2 * x3 - 2.0 * x2 * x2 * x4 * x4 - x2 * x2 * x5 * x5 + x2 * x3 * x3 * x4 - 2.0 * x0 * x2 * x3 * x4 + x2 * x4 * x4 * x4 + x2 * x4 * x5 * x5) - 2.0 * x1 * x1 * x1 * x4 * x4 - 2.0 * x0 * x2 * x4 * x4 * x4 - 2.0 * x0 * x2 * x2 * x2 * x4 + 2.0 * x1 * x2 * x4 * x4 * x4 + 2.0 * x2 * x2 * x2 * x3 * x4 + 4.0 * x0 * x1 * x1 * x4 * x4 + 4.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x0 * x1 * x4 * x4 - 2.0 * x0 * x0 * x2 * x2 * x3 + 4.0 * x0 * x1 * x1 * x5 * x5 + 4.0 * x0 * x2 * x2 * x4 * x4 - 2.0 * x0 * x0 * x1 * x5 * x5 + 2.0 * x0 * x2 * x2 * x5 * x5 - 2.0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x1 * x2 * x2 * x5 * x5 - 2.0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x2 * x2 * x3 * x5 * x5 + 2.0 * x0 * x2 * x2 * (2.0 * s0 - 2.0 * s3) + 2.0 * x0 * (2.0 * s0 - 2.0 * s2) * (x4 * x4 + x5 * x5) - 2.0 * x2 * (x1 * x4 - x2 * x3) * (s1 - 2.0 * s0 + s3) - 2.0 * x0 * x1 * x1 * x2 * x4 + 2.0 * x0 * x0 * x1 * x2 * x4 - 2.0 * x0 * x2 * x3 * x3 * x4 + 2.0 * x0 * x0 * x2 * x3 * x4 + 2.0 * x1 * x2 * x3 * x3 * x4 + 2.0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x0 * x2 * x4 * x5 * x5 + 2.0 * x1 * x2 * x4 * x5 * x5 + 4.0 * x0 * x2 * x4 * (s2 - 2.0 * s0 + s3) - 4.0 * x0 * x1 * x2 * x3 * x4, (2.0 * s0 - 2.0 * s1) * (2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5) - 2.0 * x0 * (-x0 * x0 * x2 * x4 + x0 * x0 * x4 * x4 + x0 * x0 * x5 * x5 + 2.0 * x0 * x1 * x2 * x4 - 4.0 * x0 * x1 * x4 * x4 - 4.0 * x0 * x1 * x5 * x5 + 2.0 * x0 * x2 * x3 * x4 + 3 * x1 * x1 * x4 * x4 + 3 * x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5) + 2.0 * x0 * (x4 * x4 + x5 * x5) * (s1 - 2.0 * s0 + s2) - 2.0 * x0 * x2 * x4 * (s1 - 2.0 * s0 + s3), (2.0 * s0 - 2.0 * s1) * (2.0 * x2 * x3 * x3 - 2.0 * x1 * x4 * x3 + 2.0 * x2 * x5 * x5) - (2.0 * x0 * (x1 * x4 - x2 * x3) - 2.0 * x0 * x2 * x3) * (s1 - 2.0 * s0 + s3) - 2.0 * x0 * (-x0 * x0 * x1 * x4 + 2.0 * x0 * x0 * x2 * x3 - x0 * x0 * x3 * x4 + x0 * x1 * x1 * x4 + 2.0 * x0 * x1 * x3 * x4 + 3 * x0 * x2 * x2 * x4 - 4.0 * x0 * x2 * x3 * x3 - 4.0 * x0 * x2 * x4 * x4 - 2.0 * x0 * x2 * x5 * x5 + x0 * x3 * x3 * x4 + x0 * x4 * x4 * x4 + x0 * x4 * x5 * x5 - x1 * x1 * x3 * x4 + 2.0 * x1 * x2 * x4 * x4 + 2.0 * x1 * x2 * x5 * x5 - x1 * x3 * x3 * x4 - x1 * x4 * x4 * x4 - x1 * x4 * x5 * x5 - 3 * x2 * x2 * x3 * x4 + 2.0 * x2 * x3 * x3 * x3 + 2.0 * x2 * x3 * x4 * x4 + 2.0 * x2 * x3 * x5 * x5) + 2.0 * x0 * x0 * x2 * (2.0 * s0 - 2.0 * s3) + 2.0 * x0 * x0 * x4 * (s2 - 2.0 * s0 + s3) - 2.0 * x0 * x3 * x4 * (s1 - 2.0 * s0 + s2), (2.0 * s0 - 2.0 * s1) * (2.0 * x3 * x2 * x2 - 2.0 * x1 * x4 * x2) - 2.0 * x0 * (x0 * x0 * x2 * x2 - x0 * x0 * x2 * x4 + 2.0 * x0 * x1 * x2 * x4 - 4.0 * x0 * x2 * x2 * x3 + 2.0 * x0 * x2 * x3 * x4 - x1 * x1 * x2 * x4 - 2.0 * x1 * x2 * x3 * x4 - x2 * x2 * x2 * x4 + 3 * x2 * x2 * x3 * x3 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5) + 2.0 * x0 * x2 * x2 * (s1 - 2.0 * s0 + s3) - 2.0 * x0 * x2 * x4 * (s1 - 2.0 * s0 + s2), (2.0 * s0 - 2.0 * s1) * (2.0 * x4 * x1 * x1 - 2.0 * x2 * x3 * x1) - 2.0 * x0 * (-x0 * x0 * x1 * x2 + 2.0 * x0 * x0 * x1 * x4 - x0 * x0 * x2 * x3 + x0 * x1 * x1 * x2 - 4.0 * x0 * x1 * x1 * x4 + 2.0 * x0 * x1 * x2 * x3 + x0 * x2 * x2 * x2 - 4.0 * x0 * x2 * x2 * x4 + x0 * x2 * x3 * x3 + 3 * x0 * x2 * x4 * x4 + x0 * x2 * x5 * x5 + 2.0 * x1 * x1 * x1 * x4 - x1 * x1 * x2 * x3 + 2.0 * x1 * x2 * x2 * x4 - x1 * x2 * x3 * x3 - 3 * x1 * x2 * x4 * x4 - x1 * x2 * x5 * x5 - x2 * x2 * x2 * x3 + 2.0 * x2 * x2 * x3 * x4) + 2.0 * x0 * x0 * x4 * (2.0 * s0 - 2.0 * s2) + 2.0 * x0 * x0 * x2 * (s2 - 2.0 * s0 + s3) + 2.0 * x0 * (2.0 * x1 * x4 - x2 * x3) * (s1 - 2.0 * s0 + s2) - 2.0 * x0 * x1 * x2 * (s1 - 2.0 * s0 + s3), (2.0 * s0 - 2.0 * s1) * (2.0 * x5 * x1 * x1 + 2.0 * x5 * x2 * x2) - 2.0 * x0 * (2.0 * x5 * x0 * x0 * x1 - 4.0 * x5 * x0 * x1 * x1 - 2.0 * x5 * x0 * x2 * x2 + 2.0 * x4 * x5 * x0 * x2 + 2.0 * x5 * x1 * x1 * x1 + 2.0 * x5 * x1 * x2 * x2 - 2.0 * x4 * x5 * x1 * x2 + 2.0 * x3 * x5 * x2 * x2) + 2.0 * x0 * x0 * x5 * (2.0 * s0 - 2.0 * s2) + 4.0 * x0 * x1 * x5 * (s1 - 2.0 * s0 + s2)},
+        {2.0 * x1 * x1 * x1 * x4 * x4 + 2.0 * x2 * x2 * x3 * x3 * x3 + 2.0 * x1 * x1 * x1 * x5 * x5 + (s0 - s2) * (2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5) - 2.0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x3 * x3 + x2 * x2 * x5 * x5) - 2.0 * x1 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x2 * (s0 - s3) * (x1 * x4 - x2 * x3) - 2.0 * x0 * x1 * x1 * x4 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x0 * x2 * x2 * x5 * x5 + 2.0 * x1 * x2 * x2 * x4 * x4 + 2.0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x2 * x2 * x3 * x4 * x4 + 2.0 * x2 * x2 * x3 * x5 * x5 - 2.0 * x1 * x2 * x3 * x3 * x4 - 2.0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x1 * x2 * x4 * x5 * x5 + 4.0 * x0 * x1 * x2 * x3 * x4, 2.0 * x0 * (x4 * x4 + x5 * x5) * (s0 - s2) - (2.0 * s0 - 2.0 * s1) * (2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5) - 2.0 * x0 * (-3 * x1 * x1 * x4 * x4 - 3 * x1 * x1 * x5 * x5 + 2.0 * x1 * x2 * x3 * x4 + 2.0 * x0 * x1 * x4 * x4 + 2.0 * x0 * x1 * x5 * x5 - x2 * x2 * x4 * x4 - x2 * x2 * x5 * x5 + x2 * x3 * x3 * x4 - 2.0 * x0 * x2 * x3 * x4 + x2 * x4 * x4 * x4 + x2 * x4 * x5 * x5) - 2.0 * x0 * x2 * x4 * (s0 - s3), -(s0 - s3) * (2.0 * x0 * (x1 * x4 - x2 * x3) - 2.0 * x0 * x2 * x3) - 2.0 * x0 * (x1 * x1 * x3 * x4 - 2.0 * x1 * x2 * x4 * x4 - 2.0 * x1 * x2 * x5 * x5 + x1 * x3 * x3 * x4 - 2.0 * x0 * x1 * x3 * x4 + x1 * x4 * x4 * x4 + x1 * x4 * x5 * x5 + 3 * x2 * x2 * x3 * x4 - 2.0 * x2 * x3 * x3 * x3 + 2.0 * x0 * x2 * x3 * x3 - 2.0 * x2 * x3 * x4 * x4 - 2.0 * x2 * x3 * x5 * x5 + 2.0 * x0 * x2 * x5 * x5) - (2.0 * s0 - 2.0 * s1) * (2.0 * x2 * x3 * x3 - 2.0 * x1 * x4 * x3 + 2.0 * x2 * x5 * x5) - 2.0 * x0 * x3 * x4 * (s0 - s2), 2.0 * x0 * (-x1 * x1 * x2 * x4 - 2.0 * x1 * x2 * x3 * x4 + 2.0 * x0 * x1 * x2 * x4 - x2 * x2 * x2 * x4 + 3 * x2 * x2 * x3 * x3 - 2.0 * x0 * x2 * x2 * x3 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5) - (2.0 * s0 - 2.0 * s1) * (2.0 * x3 * x2 * x2 - 2.0 * x1 * x4 * x2) + 2.0 * x0 * x2 * x2 * (s0 - s3) - 2.0 * x0 * x2 * x4 * (s0 - s2), 2.0 * x0 * (s0 - s2) * (2.0 * x1 * x4 - x2 * x3) - 2.0 * x0 * (-2 * x1 * x1 * x1 * x4 + x1 * x1 * x2 * x3 + 2.0 * x0 * x1 * x1 * x4 - 2.0 * x1 * x2 * x2 * x4 + x1 * x2 * x3 * x3 - 2.0 * x0 * x1 * x2 * x3 + 3 * x1 * x2 * x4 * x4 + x1 * x2 * x5 * x5 + x2 * x2 * x2 * x3 - 2.0 * x2 * x2 * x3 * x4) - (2.0 * s0 - 2.0 * s1) * (2.0 * x4 * x1 * x1 - 2.0 * x2 * x3 * x1) - 2.0 * x0 * x1 * x2 * (s0 - s3), 2.0 * x0 * (2.0 * x1 * x1 * x1 * x5 - 2.0 * x0 * x1 * x1 * x5 - 2.0 * x0 * x2 * x2 * x5 + 2.0 * x1 * x2 * x2 * x5 + 2.0 * x2 * x2 * x3 * x5 - 2.0 * x1 * x2 * x4 * x5) - (2.0 * s0 - 2.0 * s1) * (2.0 * x5 * x1 * x1 + 2.0 * x5 * x2 * x2) + 4.0 * x0 * x1 * x5 * (s0 - s2) },
+        {(s0 - s1) * (2.0 * x1 * x4 * x4 - 2.0 * x2 * x3 * x4 + 2.0 * x1 * x5 * x5) + 2.0 * x0 * x0 * (x1 * x4 * x4 - x2 * x3 * x4 + x1 * x5 * x5) - 4.0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - x0 * x1 * x4 * x4 - x0 * x1 * x5 * x5 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 + x0 * x2 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5) - 2.0 * x0 * (2.0 * s0 - 2.0 * s2) * (x4 * x4 + x5 * x5) + 4.0 * x0 * x2 * x4 * (s0 - s3), 2.0 * x0 * x0 * (x0 * x4 * x4 + x0 * x5 * x5 - 2.0 * x1 * x4 * x4 - 2.0 * x1 * x5 * x5) + 2.0 * x0 * (x4 * x4 + x5 * x5) * (s0 - s1), 2.0 * x0 * x0 * x4 * (s0 - s3) - 2.0 * x0 * x0 * (-x3 * x3 * x4 + x0 * x3 * x4 - x4 * x4 * x4 + 2.0 * x2 * x4 * x4 - x4 * x5 * x5 + 2.0 * x2 * x5 * x5) - 2.0 * x0 * x3 * x4 * (s0 - s1), -2 * x0 * x0 * (x0 * x2 * x4 - 2.0 * x2 * x3 * x4) - 2.0 * x0 * x2 * x4 * (s0 - s1), 2.0 * x0 * x0 * (-2 * x1 * x1 * x4 + 2.0 * x0 * x1 * x4 - 2.0 * x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + 3 * x2 * x4 * x4 + x2 * x5 * x5) + 2.0 * x0 * x0 * x2 * (s0 - s3) + 2.0 * x0 * (s0 - s1) * (2.0 * x1 * x4 - x2 * x3) - 2.0 * x0 * x0 * x4 * (2.0 * s0 - 2.0 * s2), 4.0 * x0 * x1 * x5 * (s0 - s1) - 2.0 * x0 * x0 * x5 * (2.0 * s0 - 2.0 * s2) - 2.0 * x0 * x0 * (2.0 * x5 * x1 * x1 - 2.0 * x0 * x5 * x1 + 2.0 * x5 * x2 * x2 - 2.0 * x4 * x5 * x2)},
+        {4.0 * x0 * x2 * x4 * (s0 - s2) - 4.0 * x0 * x2 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5) - 2.0 * x0 * x0 * x2 * (x1 * x4 - x2 * x3) - 2.0 * x0 * x2 * x2 * (2.0 * s0 - 2.0 * s3) - 2.0 * x2 * (s0 - s1) * (x1 * x4 - x2 * x3), -2 * x0 * x0 * x2 * (x0 * x4 - 2.0 * x1 * x4) - 2.0 * x0 * x2 * x4 * (s0 - s1), 2.0 * x0 * x0 * x4 * (s0 - s2) - 2.0 * x0 * x0 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5) - 2.0 * x0 * x0 * x2 * (x3 * x3 - x0 * x3 + x4 * x4 - 2.0 * x2 * x4 + x5 * x5) - (s0 - s1) * (2.0 * x0 * (x1 * x4 - x2 * x3) - 2.0 * x0 * x2 * x3) - 2.0 * x0 * x0 * x2 * (2.0 * s0 - 2.0 * s3), 2.0 * x0 * x2 * x2 * (s0 - s1) + 2.0 * x0 * x0 * x2 * (x0 * x2 - 2.0 * x2 * x3), 2.0 * x0 * x0 * x2 * (s0 - s2) - 2.0 * x0 * x0 * x2 * (-x1 * x1 + x0 * x1 - x2 * x2 + 2.0 * x4 * x2) - 2.0 * x0 * x1 * x2 * (s0 - s1), -4 * x0 * x0 * x2 * x2 * x5} };
+
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 6; j++) {
+            dJdr_vec[i][j] = dJdr[i][j];
+        }
+    }
+    double s[4]{ s0, s1, s2, s3 };
+    for (int i = 0; i < 4; i++) {
+        double sqrtD = sqrt(s[i]);
+        for (int j = 0; j < 6; j++) {
+            dJdr_vec[i][j] *= 2 * sqrtD;
+        }
+    }
+}
+
+void computeDerivative(double T_vec[11], const double S_vec[11], double J_vec[4], double dTdr[11][6], double dJdr[4][6], double derivative[6]) {
+    double nabla_JJ[6]{ 0, 0, 0, 0, 0, 0 };
+    for (int i = 0; i < 6; i++) {
+        for (int j = 0; j < 4; j++) {
+            nabla_JJ[i] += 2 * J_vec[j] * dJdr[j][i];
+        }
+    }
+    double st = 0;
+    for (int i = 0; i < 11; i++) {
+        st += S_vec[i] * T_vec[i];
+    }
+    double jj = 0;
+    for (int i = 0; i < 4; i++) {
+        jj += J_vec[i] * J_vec[i];
+    }
+    double sqrtjj = sqrt(jj);
+    for (int i = 0; i < 6; i++) {
+        derivative[i] = 0;
+        for (int j = 0; j < 11; j++) {
+            derivative[i] += S_vec[j] * dTdr[j][i];
+        }
+        derivative[i] *= sqrtjj;
+        derivative[i] -= st * nabla_JJ[i] / (2* sqrtjj);
+        derivative[i] /= jj;
+    }
+
+}
+};

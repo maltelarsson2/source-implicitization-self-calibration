@@ -1,0 +1,260 @@
+/*
+* arrayProduct.cpp - example in MATLAB External Interfaces
+*
+* Multiplies an input scalar (multiplier)
+* times a MxN matrix (inMatrix)
+* and outputs a MxN matrix (outMatrix)
+*
+* Usage : from MATLAB
+*         >> outMatrix = arrayProduct(multiplier, inMatrix)
+*
+* This is a C++ MEX-file for MATLAB.
+* Copyright 2017 The MathWorks, Inc.
+*
+*/
+
+#include "mex.hpp"
+#include "mexAdapter.hpp"
+#include "ceres/ceres.h"
+
+using ceres::AutoDiffCostFunction;
+using ceres::CostFunction;
+using ceres::Problem;
+using ceres::Solve;
+using ceres::Solver;
+
+template <typename T>
+void computeT(const T x0, const T x1, const T x2, const T x3, const T x4, const T x5, T T_vec[11]) {
+    T_vec[0] = x0 * x0 * (x0 * x0 * x1 * x1 * x4 * x4 + x0 * x0 * x1 * x1 * x5 * x5 - 2.0 * x0 * x0 * x1 * x2 * x3 * x4 + x0 * x0 * x2 * x2 * x3 * x3 + x0 * x0 * x2 * x2 * x5 * x5 - 2.0 * x0 * x1 * x1 * x1 * x4 * x4 - 2.0 * x0 * x1 * x1 * x1 * x5 * x5 + 2.0 * x0 * x1 * x1 * x2 * x3 * x4 - 2.0 * x0 * x1 * x2 * x2 * x4 * x4 - 2.0 * x0 * x1 * x2 * x2 * x5 * x5 + 2.0 * x0 * x1 * x2 * x3 * x3 * x4 + 2.0 * x0 * x1 * x2 * x4 * x4 * x4 + 2.0 * x0 * x1 * x2 * x4 * x5 * x5 + 2.0 * x0 * x2 * x2 * x2 * x3 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 * x3 - 2.0 * x0 * x2 * x2 * x3 * x4 * x4 - 2.0 * x0 * x2 * x2 * x3 * x5 * x5 + x1 * x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x1 * x5 * x5 + 2.0 * x1 * x1 * x2 * x2 * x4 * x4 + 2.0 * x1 * x1 * x2 * x2 * x5 * x5 - 2.0 * x1 * x1 * x2 * x3 * x3 * x4 - 2.0 * x1 * x1 * x2 * x4 * x4 * x4 - 2.0 * x1 * x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x2 * x4 * x4 + x2 * x2 * x2 * x2 * x5 * x5 - 2.0 * x2 * x2 * x2 * x3 * x3 * x4 - 2.0 * x2 * x2 * x2 * x4 * x4 * x4 - 2.0 * x2 * x2 * x2 * x4 * x5 * x5 + x2 * x2 * x3 * x3 * x3 * x3 + 2.0 * x2 * x2 * x3 * x3 * x4 * x4 + 2.0 * x2 * x2 * x3 * x3 * x5 * x5 + x2 * x2 * x4 * x4 * x4 * x4 + 2.0 * x2 * x2 * x4 * x4 * x5 * x5 + x2 * x2 * x5 * x5 * x5 * x5);
+    T_vec[1] = -2.0 * x0 * (-x0 * x0 * x1 * x2 * x4 + x0 * x0 * x1 * x4 * x4 + x0 * x0 * x1 * x5 * x5 + x0 * x0 * x2 * x2 * x3 - x0 * x0 * x2 * x3 * x4 + x0 * x1 * x1 * x2 * x4 - 2.0 * x0 * x1 * x1 * x4 * x4 - 2.0 * x0 * x1 * x1 * x5 * x5 + 2.0 * x0 * x1 * x2 * x3 * x4 + x0 * x2 * x2 * x2 * x4 - 2.0 * x0 * x2 * x2 * x3 * x3 - 2.0 * x0 * x2 * x2 * x4 * x4 - x0 * x2 * x2 * x5 * x5 + x0 * x2 * x3 * x3 * x4 + x0 * x2 * x4 * x4 * x4 + x0 * x2 * x4 * x5 * x5 + x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x5 * x5 - x1 * x1 * x2 * x3 * x4 + x1 * x2 * x2 * x4 * x4 + x1 * x2 * x2 * x5 * x5 - x1 * x2 * x3 * x3 * x4 - x1 * x2 * x4 * x4 * x4 - x1 * x2 * x4 * x5 * x5 - x2 * x2 * x2 * x3 * x4 + x2 * x2 * x3 * x3 * x3 + x2 * x2 * x3 * x4 * x4 + x2 * x2 * x3 * x5 * x5);
+    T_vec[2] = -2.0 * x0 * (-x1 * x1 * x1 * x4 * x4 - x1 * x1 * x1 * x5 * x5 + x1 * x1 * x2 * x3 * x4 + x0 * x1 * x1 * x4 * x4 + x0 * x1 * x1 * x5 * x5 - x1 * x2 * x2 * x4 * x4 - x1 * x2 * x2 * x5 * x5 + x1 * x2 * x3 * x3 * x4 - 2.0 * x0 * x1 * x2 * x3 * x4 + x1 * x2 * x4 * x4 * x4 + x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x3 * x4 - x2 * x2 * x3 * x3 * x3 + x0 * x2 * x2 * x3 * x3 - x2 * x2 * x3 * x4 * x4 - x2 * x2 * x3 * x5 * x5 + x0 * x2 * x2 * x5 * x5);
+    T_vec[3] = -2.0 * x0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - x0 * x1 * x4 * x4 - x0 * x1 * x5 * x5 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 + x0 * x2 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5);
+    T_vec[4] = -2.0 * x0 * x0 * x2 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5);
+    T_vec[5] = x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - 2.0 * x1 * x2 * x3 * x4 + x2 * x2 * x3 * x3 + x2 * x2 * x5 * x5;
+    T_vec[6] = -2.0 * x0 * (x1 * x4 * x4 - x2 * x3 * x4 + x1 * x5 * x5);
+    T_vec[7] = x0 * x0 * (x4 * x4 + x5 * x5);
+    T_vec[8] = 2.0 * x0 * x2 * (x1 * x4 - x2 * x3);
+    T_vec[9] = -2.0 * x0 * x0 * x2 * x4;
+    T_vec[10] = x0 * x0 * x2 * x2;
+}
+
+void S(double s0, double s1, double s2, double s3, double S_vec[11]) {
+    S_vec[0] = 1;
+    S_vec[1] = s0;
+    S_vec[2] = s1;
+    S_vec[3] = s2;
+    S_vec[4] = s3;
+    S_vec[5] = (s1 - s0) * (s1 - s0);
+    S_vec[6] = (s0 - s1) * (s0 - s2);
+    S_vec[7] = (s0 - s2) * (s0 - s2);
+    S_vec[8] = (s0 - s1) * (s0 - s3);
+    S_vec[9] = (s0 - s2) * (s0 - s3);
+    S_vec[10] = (s0 - s3) * (s0 - s3);
+}
+
+void Sds(double s0, double s1, double s2, double s3, double sds[11][4]) {
+    double s_vec[11][4]{ {0, 0, 0, 0},
+        {1, 0, 0, 0},
+        {0, 1, 0, 0},
+        {0, 0, 1, 0},
+        {0, 0, 0, 1},
+        {2 * (s0 - s1), 2 * (s1 - s0), 0, 0},
+        {2 * s0 - s1 - s2, s2 - s0, s1 - s0, 0},
+        {2 * (s0 - s2), 0, 2 * (s2 - s0), 0},
+        {2 * s0 - s1 - s3, s3 - s0, 0, s1 - s0},
+        {2 * s0 - s2 - s3, 0, s3 - s0, s2 - s0},
+        {2 * (s0 - s3), 0, 0, 2 * (s3 - s0)} };
+    for (int i = 0; i < 11; i++) {
+        for (int j = 0; j < 4; j++) {
+            sds[i][j] = s_vec[i][j];
+        }
+    }
+}
+
+template <typename T>
+T computeError(const double s_vec[11], T t_vec[11], T j_mat[4]) {
+    T error = s_vec[0] * t_vec[0];
+    for (int i = 1; i < 11; i++) {
+        error += s_vec[i] * t_vec[i];
+    }
+    error /= sqrt(j_mat[0] * j_mat[0] + j_mat[1] * j_mat[1] + j_mat[2] * j_mat[2] + j_mat[3] * j_mat[3]);
+
+    return error;
+}
+
+template <typename T>
+void J(const double sds[11][4], T t[11], const double d[4], T j_mat[4]) {
+    for (int i = 0; i < 4; i++) {
+        T val = sds[0][i] * t[0];
+        for (int j = 1; j < 11; j++) {
+            val += sds[j][i] * t[j];
+        }
+        j_mat[i] = val;
+    }
+    for (int i = 0; i < 4; i++) {
+        j_mat[i] = j_mat[i]*2.0 * sqrt(d[i]);
+    }
+}
+
+// A templated cost functor that implements the residual r = 10 -
+// x. The method operator() is templated so that we can then use an
+// automatic differentiation wrapper around it to generate its
+// derivatives.
+
+struct SampsonResidual {
+    SampsonResidual(double s0, double s1, double s2, double s3) {
+        S(s0, s1, s2, s3, s_vec);
+        Sds(s0, s1, s2, s3, sds);
+        d[0] = s0;
+        d[1] = s1;
+        d[2] = s2;
+        d[3] = s3;
+    }
+
+    template <typename T> 
+    bool operator()(const T* const x0, const T* const x1, const T* const x2, const T* const x3, const T* const x4, const T* const x5, T* residual) const {
+        T T_vec[11]{};
+        computeT(x0[0], x1[0], x2[0], x3[0], x4[0], x5[0], T_vec);
+        T j_mat[4]{};
+        J(sds, T_vec, d, j_mat);
+        //std::cout << j_mat[0] << " " << j_mat[1] << " " << j_mat[2] << " " << j_mat[3] << " " << "\n";
+        residual[0] = computeError(s_vec, T_vec, j_mat);
+        //residual[0] = 1.0 - x0[0] * x1[0];
+        return true;
+    }
+
+private:
+    // Observations for a sample.
+    double s_vec[11]{};
+    double sds[11][4]{};
+    double d[4]{};
+};
+
+
+
+
+
+void optSampson(double variables[6], std::vector<std::vector<double>> *data) {
+    Problem problem;
+    std::vector<std::vector<double>> d2;
+    d2.push_back(std::vector<double>());
+    std::vector<double> last = d2.back();
+    double &x0 = variables[0];
+    double &x1 = variables[1];
+    double &x2 = variables[2];
+    double &x3 = variables[3];
+    double &x4 = variables[4];
+    double &x5 = variables[5];
+    // Set up the only cost function (also known as residual). This uses
+    // auto-differentiation to obtain the derivative (jacobian).
+    for (int i = 0; i < data[0].size(); i++) {
+        std::vector<double> dataPoint = data[0][i];
+        problem.AddResidualBlock(
+            new AutoDiffCostFunction<SampsonResidual, 1, 1, 1, 1, 1, 1, 1>(
+                new SampsonResidual(dataPoint[0], dataPoint[1], dataPoint[2], dataPoint[3])),
+            nullptr,
+            &x0, &x1, &x2, &x3, &x4, &x5);
+    }
+
+    // Run the solver!
+    Solver::Options options;
+    options.max_num_iterations = 1000;
+    options.minimizer_progress_to_stdout = true;
+    Solver::Summary summary;
+    Solve(options, &problem, &summary);
+    std::cout << summary.BriefReport() << "\n";
+//     std::cout << "x0 : " << x0 << "\n";
+//     std::cout << "x1 : " << x1 << "\n";
+//     std::cout << "x2 : " << x2 << "\n";
+//     std::cout << "x3 : " << x3 << "\n";
+//     std::cout << "x4 : " << x4 << "\n";
+//     std::cout << "x5 : " << x5 << "\n";
+
+
+}
+
+class MexFunction : public matlab::mex::Function {
+
+public:
+    void operator()(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+//         checkArguments(outputs, inputs);
+        matlab::data::TypedArray<double> initialR = std::move(inputs[0]);
+        matlab::data::TypedArray<double> inD2 = std::move(inputs[1]);
+        double vals[6]{};
+        int i = 0;
+        for(auto elem : initialR){
+            vals[i++] = elem;
+        }
+        std::vector<std::vector<double>> data;
+        
+        i = 0;
+        for(auto elem : inD2){
+            if(i%4==0){
+                data.push_back(std::vector<double>());
+            }
+            data.back().push_back(elem);
+            i++;
+        }
+        optSampson(vals, &data);
+        using namespace matlab::data;
+
+        ArrayFactory factory;
+
+        
+        outputs[0] = factory.createArray<double>({ 3,4 });
+        for(int i = 0; i<3; i++){
+            for(int j = 0; j<4; j++){
+                outputs[0][i][j] = 0.0;
+            }
+        }
+        outputs[0][0][1] = vals[0];
+        outputs[0][0][2] = vals[1];
+        outputs[0][1][2] = vals[2];
+        outputs[0][0][3] = vals[3];
+        outputs[0][1][3] = vals[4];
+        outputs[0][2][3] = vals[5];
+    }
+
+    void arrayProduct(matlab::data::TypedArray<double>& inMatrix, double multiplier) {
+        
+        for (auto& elem : inMatrix) {
+            elem *= multiplier;
+        }
+    }
+
+    void checkArguments(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+        std::shared_ptr<matlab::engine::MATLABEngine> matlabPtr = getEngine();
+        matlab::data::ArrayFactory factory;
+
+        if (inputs.size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Two inputs required") }));
+        }
+
+        if (inputs[0].getNumberOfElements() != 1) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a scalar") }));
+        }
+        
+        if (inputs[0].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[0].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a noncomplex scalar double") }));
+        }
+
+        if (inputs[1].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[1].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input matrix must be type double") }));
+        }
+
+        if (inputs[1].getDimensions().size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input must be m-by-n dimension") }));
+        }
+    }
+    
+
+    
+
+};

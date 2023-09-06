@@ -1,0 +1,187 @@
+/*
+* arrayProduct.cpp - example in MATLAB External Interfaces
+*
+* Multiplies an input scalar (multiplier)
+* times a MxN matrix (inMatrix)
+* and outputs a MxN matrix (outMatrix)
+*
+* Usage : from MATLAB
+*         >> outMatrix = arrayProduct(multiplier, inMatrix)
+*
+* This is a C++ MEX-file for MATLAB.
+* Copyright 2017 The MathWorks, Inc.
+*
+*/
+
+#include "mex.hpp"
+#include "mexAdapter.hpp"
+
+class MexFunction : public matlab::mex::Function {
+public:
+    void operator()(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+//         checkArguments(outputs, inputs);
+        matlab::data::TypedArray<double> in0 = std::move(inputs[0]);
+        matlab::data::TypedArray<double> in1 = std::move(inputs[1]);
+        double vals[6]{};
+        int i = 0;
+        for(auto elem : in0){
+            vals[i++] = elem;
+        }
+        double sVals[4]{};
+        double sVals2[4]{};
+
+        i = 0;
+        for(auto elem : in1){
+            sVals[i] = elem;
+            sVals2[i++] = elem*elem;
+        }
+        double* T_vec = T(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+        double* S_vec = S(sVals2[0], sVals2[1], sVals2[2], sVals2[3]);
+        double sds[11][4];
+        Sds(sVals2[0], sVals2[1], sVals2[2], sVals2[3], sds);
+        double j_mat[4];
+        J(sds, T_vec, sVals, j_mat);
+        double error = computeError(S_vec, T_vec,j_mat); 
+        using namespace matlab::data;
+
+        ArrayFactory factory;
+
+        outputs[0] = factory.createArray<double>({ 11,1 });
+        for(int i = 0; i<11; i++){
+            outputs[0][i] = T_vec[i];
+        }
+        outputs[1] = factory.createArray<double>({ 11,1 });
+        for(int i = 0; i<11; i++){
+            outputs[1][i] = S_vec[i];
+        }
+        outputs[2] = factory.createArray<double>({ 11,4 });
+        for(int i = 0; i<11; i++){
+            for(int j = 0; j<4; j++){
+                outputs[2][i][j] = sds[i][j];
+            }
+        }
+        outputs[3] = factory.createArray<double>({ 4, 1});
+        for(int i = 0; i<4; i++){
+            outputs[3][i] = j_mat[i];
+        }
+        outputs[4] = factory.createArray<double>({ 1, 1});
+        outputs[4][0]= error;
+
+
+    }
+
+    void arrayProduct(matlab::data::TypedArray<double>& inMatrix, double multiplier) {
+        
+        for (auto& elem : inMatrix) {
+            elem *= multiplier;
+        }
+    }
+
+    void checkArguments(matlab::mex::ArgumentList outputs, matlab::mex::ArgumentList inputs) {
+        std::shared_ptr<matlab::engine::MATLABEngine> matlabPtr = getEngine();
+        matlab::data::ArrayFactory factory;
+
+        if (inputs.size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Two inputs required") }));
+        }
+
+        if (inputs[0].getNumberOfElements() != 1) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a scalar") }));
+        }
+        
+        if (inputs[0].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[0].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input multiplier must be a noncomplex scalar double") }));
+        }
+
+        if (inputs[1].getType() != matlab::data::ArrayType::DOUBLE ||
+            inputs[1].getType() == matlab::data::ArrayType::COMPLEX_DOUBLE) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input matrix must be type double") }));
+        }
+
+        if (inputs[1].getDimensions().size() != 2) {
+            matlabPtr->feval(u"error", 
+                0, std::vector<matlab::data::Array>({ factory.createScalar("Input must be m-by-n dimension") }));
+        }
+    }
+    
+
+    double* T(double x0, double x1, double x2, double x3, double x4, double x5) {
+    double T_vec[11]{};
+    T_vec[0] = x0 * x0 * (x0 * x0 * x1 * x1 * x4 * x4 + x0 * x0 * x1 * x1 * x5 * x5 - 2 * x0 * x0 * x1 * x2 * x3 * x4 + x0 * x0 * x2 * x2 * x3 * x3 + x0 * x0 * x2 * x2 * x5 * x5 - 2 * x0 * x1 * x1 * x1 * x4 * x4 - 2 * x0 * x1 * x1 * x1 * x5 * x5 + 2 * x0 * x1 * x1 * x2 * x3 * x4 - 2 * x0 * x1 * x2 * x2 * x4 * x4 - 2 * x0 * x1 * x2 * x2 * x5 * x5 + 2 * x0 * x1 * x2 * x3 * x3 * x4 + 2 * x0 * x1 * x2 * x4 * x4 * x4 + 2 * x0 * x1 * x2 * x4 * x5 * x5 + 2 * x0 * x2 * x2 * x2 * x3 * x4 - 2 * x0 * x2 * x2 * x3 * x3 * x3 - 2 * x0 * x2 * x2 * x3 * x4 * x4 - 2 * x0 * x2 * x2 * x3 * x5 * x5 + x1 * x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x1 * x5 * x5 + 2 * x1 * x1 * x2 * x2 * x4 * x4 + 2 * x1 * x1 * x2 * x2 * x5 * x5 - 2 * x1 * x1 * x2 * x3 * x3 * x4 - 2 * x1 * x1 * x2 * x4 * x4 * x4 - 2 * x1 * x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x2 * x4 * x4 + x2 * x2 * x2 * x2 * x5 * x5 - 2 * x2 * x2 * x2 * x3 * x3 * x4 - 2 * x2 * x2 * x2 * x4 * x4 * x4 - 2 * x2 * x2 * x2 * x4 * x5 * x5 + x2 * x2 * x3 * x3 * x3 * x3 + 2 * x2 * x2 * x3 * x3 * x4 * x4 + 2 * x2 * x2 * x3 * x3 * x5 * x5 + x2 * x2 * x4 * x4 * x4 * x4 + 2 * x2 * x2 * x4 * x4 * x5 * x5 + x2 * x2 * x5 * x5 * x5 * x5);
+    T_vec[1] = -2 * x0 * (-x0 * x0 * x1 * x2 * x4 + x0 * x0 * x1 * x4 * x4 + x0 * x0 * x1 * x5 * x5 + x0 * x0 * x2 * x2 * x3 - x0 * x0 * x2 * x3 * x4 + x0 * x1 * x1 * x2 * x4 - 2 * x0 * x1 * x1 * x4 * x4 - 2 * x0 * x1 * x1 * x5 * x5 + 2 * x0 * x1 * x2 * x3 * x4 + x0 * x2 * x2 * x2 * x4 - 2 * x0 * x2 * x2 * x3 * x3 - 2 * x0 * x2 * x2 * x4 * x4 - x0 * x2 * x2 * x5 * x5 + x0 * x2 * x3 * x3 * x4 + x0 * x2 * x4 * x4 * x4 + x0 * x2 * x4 * x5 * x5 + x1 * x1 * x1 * x4 * x4 + x1 * x1 * x1 * x5 * x5 - x1 * x1 * x2 * x3 * x4 + x1 * x2 * x2 * x4 * x4 + x1 * x2 * x2 * x5 * x5 - x1 * x2 * x3 * x3 * x4 - x1 * x2 * x4 * x4 * x4 - x1 * x2 * x4 * x5 * x5 - x2 * x2 * x2 * x3 * x4 + x2 * x2 * x3 * x3 * x3 + x2 * x2 * x3 * x4 * x4 + x2 * x2 * x3 * x5 * x5);
+    T_vec[2] = -2 * x0 * (-x1 * x1 * x1 * x4 * x4 - x1 * x1 * x1 * x5 * x5 + x1 * x1 * x2 * x3 * x4 + x0 * x1 * x1 * x4 * x4 + x0 * x1 * x1 * x5 * x5 - x1 * x2 * x2 * x4 * x4 - x1 * x2 * x2 * x5 * x5 + x1 * x2 * x3 * x3 * x4 - 2 * x0 * x1 * x2 * x3 * x4 + x1 * x2 * x4 * x4 * x4 + x1 * x2 * x4 * x5 * x5 + x2 * x2 * x2 * x3 * x4 - x2 * x2 * x3 * x3 * x3 + x0 * x2 * x2 * x3 * x3 - x2 * x2 * x3 * x4 * x4 - x2 * x2 * x3 * x5 * x5 + x0 * x2 * x2 * x5 * x5);
+    T_vec[3] = -2 * x0 * x0 * (x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - x0 * x1 * x4 * x4 - x0 * x1 * x5 * x5 + x2 * x2 * x4 * x4 + x2 * x2 * x5 * x5 - x2 * x3 * x3 * x4 + x0 * x2 * x3 * x4 - x2 * x4 * x4 * x4 - x2 * x4 * x5 * x5);
+    T_vec[4] = -2 * x0 * x0 * x2 * (-x1 * x1 * x4 + x0 * x1 * x4 - x2 * x2 * x4 + x2 * x3 * x3 - x0 * x2 * x3 + x2 * x4 * x4 + x2 * x5 * x5);
+    T_vec[5] = x1 * x1 * x4 * x4 + x1 * x1 * x5 * x5 - 2 * x1 * x2 * x3 * x4 + x2 *x2 * x3 * x3 + x2 *x2 * x5 *x5;
+    T_vec[6] = -2 * x0 * (x1 * x4 *x4 - x2 * x3 * x4 + x1 * x5 * x5);
+    T_vec[7] = x0 * x0 * (x4 * x4 + x5 * x5);
+    T_vec[8] = 2 * x0 * x2 * (x1 * x4 - x2 * x3);
+    T_vec[9] = -2 * x0 *x0 * x2 * x4;
+    T_vec[10] = x0 * x0 * x2 * x2;
+
+    return T_vec;
+}
+
+double* S(double s0, double s1, double s2, double s3) {
+    double S_vec[11]{};
+    S_vec[0] = 1;
+    S_vec[1] = s0;
+    S_vec[2] = s1;
+    S_vec[3] = s2;
+    S_vec[4] = s3;
+    S_vec[5] = (s1 - s0) * (s1 - s0);
+    S_vec[6] = (s0 - s1) * (s0 - s2);
+    S_vec[7] = (s0 - s2) * (s0 - s2);
+    S_vec[8] = (s0 - s1) * (s0 - s3);
+    S_vec[9] = (s0 - s2) * (s0 - s3);
+    S_vec[10] = (s0 - s3) * (s0 - s3);
+    return S_vec;
+}
+
+    void Sds(double s0, double s1, double s2, double s3, double sds[11][4]) {
+    double s_vec[11][4]{ {0, 0, 0, 0},
+        {1, 0, 0, 0},
+        {0, 1, 0, 0},
+        {0, 0, 1, 0},
+        {0, 0, 0, 1},
+        {2 * (s0 - s1), 2 * (s1 - s0), 0, 0},
+        {2 * s0 - s1 - s2, s2 - s0, s1 - s0, 0},
+        {2 * (s0 - s2), 0, 2 * (s2 - s0), 0},
+        {2 * s0 - s1 - s3, s3 - s0, 0, s1 - s0},
+        {2 * s0 - s2 - s3, 0, s3 - s0, s2 - s0},
+        {2 * (s0 - s3), 0, 0, 2 * (s3 - s0)}};
+    for (int i = 0; i < 11; i++) {
+        for (int j = 0; j < 4; j++) {
+            sds[i][j] = s_vec[i][j];
+        }
+    }
+    }
+void J(double sds[11][4], double t[11], double d[4], double j_mat[4]) {
+    for (int i = 0; i < 4; i++) {
+        double val = 0;
+        for (int j = 0; j < 11; j++) {
+             val += sds[j][i] * t[j];
+        }
+        j_mat[i] = val;
+    }
+    for (int i = 0; i < 4; i++) {
+        j_mat[i] *= 2 * d[i];
+    }
+}
+
+double computeError(double s_vec[11], double t_vec[11], double j_mat[4]) {
+    double error = 0;
+    for (int i = 0; i < 11; i++) {
+        error += s_vec[i] * t_vec[i];
+    }
+    error /= sqrt(j_mat[0] * j_mat[0] + j_mat[1] * j_mat[1] + j_mat[2] * j_mat[2] + j_mat[3] * j_mat[3]);
+
+    return error;
+}
+
+};
